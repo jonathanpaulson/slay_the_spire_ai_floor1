@@ -103,7 +103,7 @@ class State(object):
                     print(f'Cultist played ritual; ritual={self.their_ritual}')
             else:
                 dmg = self.dmg(self.their_strength + 6)
-                self.my_hp = self.my_hp - (dmg-self.block)
+                self.my_hp = self.my_hp - max(0, dmg-self.block)
                 if self.debug:
                     print(f'Enemy attacked dmg={dmg} block={self.block} new_hp={self.my_hp}')
                 self.their_strength += self.their_ritual
@@ -164,32 +164,36 @@ def prompt_strategy(state):
     for idx in to_play:
         state.play_card(idx)
 
-def evaluate(strategy):
-    T = 20000
+def evaluate(strategy, T, debug):
     hp_left = []
     for trial in range(T):
         state = State(DECK, strategy, debug=(trial==0))
         score = state.play_fight()
         hp_left.append(score)
         strategy.fight_over(score)
+        if debug and trial % 500 == 0:
+            print(f'{trial} {sum(hp_left)/len(hp_left)}', flush=True)
     avg = sum(hp_left)/T
     return avg
 
 if len(sys.argv) > 1:
     evaluate(prompt_strategy)
 else:
+    T = int(1e5)
     net = NeuralNet()
     t0 = time.time()
-    dumb_score = evaluate(DumbAgent())
-    print(f'Dumb {dumb_score} {time.time()-t0}')
-    manual_score = evaluate(Manual())
-    print(f'Manual {manual_score} {time.time()-t0}')
-    net0 = evaluate(net)
-    print(f'Net0 {net0} {time.time()-t0}')
-    net.train()
-    net1 = evaluate(net)
-    print(f'Net1 {net1} {time.time()-t0}')
-    net.train()
-    net2 = evaluate(net)
-    print(f'Net2 {net2} {time.time()-t0}')
-    print(f'dumb={dumb_score} manual={manual_score} net0={net0} net1={net1} net2={net2} nsamples={len(net.train_data)}')
+    dumb_score = evaluate(DumbAgent(), 100, False)
+    print(f'Dumb {dumb_score} {time.time()-t0}', flush=True)
+    manual_score = evaluate(Manual(), T, False)
+    print(f'Manual {manual_score} {time.time()-t0}', flush=True)
+    net_scores = []
+    for t in range(10):
+        net.training = 10-t
+        net_score = evaluate(net, T, True)
+        print(f'Net{t} {net_score} {time.time()-t0}', flush=True)
+        net.train()
+        net_scores.append(net_score)
+    net.training = 0
+    net_final = evaluate(net, T, True)
+    print(f'NetFinal {net_final} {time.time()-t0}', flush=True)
+    print(f'dumb={dumb_score} manual={manual_score} {net_scores} net={net_final}')
